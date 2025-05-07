@@ -1,6 +1,7 @@
 import base64
 import streamlit as st
 import os
+import sys
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import NamedStyle
 from copy import copy
@@ -76,7 +77,7 @@ def load_and_process(file_path, sheet_index,month_string):
             print_cell = ws.cell(row=row, column=print_col)
             if str(print_cell.value).lower() == "p":
                 all_entries.append((task_cell.value, copy(task_cell._style) if task_cell.has_style else None))
-    print(all_entries)
+    # print(all_entries)
     # Clear destination column
     for row in range(dest_header_row + 1, max_row + 1):
         clear_cell_style(ws.cell(row=row, column=dest_task_col))
@@ -117,10 +118,10 @@ def sheet_to_pdf(ws, pdf_path,above_val):
     width, height = A4
     margin = 15 * mm
     col_width = (width - 2 * margin) / 2
-    row_height = 8 * mm
+    row_height = 6 * mm
     text_offset_y = 2 * mm
-    max_rows_per_col = int((height - 2 * margin) / row_height)-1
-    heading_reserved_height = 3 * row_height  # space reserved for heading
+    max_rows_per_col = int((height - 1 * margin) / row_height)-1
+    heading_reserved_height =  3*row_height  # space reserved for heading
 
 
     # Extract entries
@@ -138,8 +139,15 @@ def sheet_to_pdf(ws, pdf_path,above_val):
 
             # Text color
             color = "#000000"
-            if (cell.value!=" ") and font.color and hasattr(font.color, "rgb") and font.color.rgb:
-                color = f"#{font.color.rgb[2:]}"  # skip 'FF' alpha
+            if  (cell.value!=" "):
+                if   font.color and hasattr(font.color, "rgb") and font.color.rgb:
+                    # color = f"#{font.color.rgb[2:]}"  # skip 'FF' alpha
+                    color = font.color.rgb
+                    if isinstance(color, str):
+                        color = f"#{color[2:]}"  # Skips 'FF' alpha if needed
+                    else:
+                        color = "#000000"  # Fallback if not a string
+
 
             # Background color
             bg_color = "#FFFFFF"  # default white
@@ -178,8 +186,12 @@ def sheet_to_pdf(ws, pdf_path,above_val):
             size = font.sz or 10
             bold = font.bold
             color = "#000000"
-            if font.color and hasattr(font.color, "rgb") and font.color.rgb:
+            if   font.color and hasattr(font.color, "rgb") and font.color.rgb:
                 color = f"#{font.color.rgb[2:]}"
+                
+            # if font.color and hasattr(font.color, "rgb") and isinstance(font.color.rgb, str):
+            #     color = f"#{font.color.rgb[-6:]}"  # Get last 6 digits (RRGGBB), skipping alpha
+                
             headings.append({
                 "text": text,
                 "size": size,
@@ -191,9 +203,8 @@ def sheet_to_pdf(ws, pdf_path,above_val):
     total = len(entries)
 
     while idx < total:
-        y = height - margin
+        y = height-10
         # --- Heading ---
-       
         start_x = (width) / 2
         x = start_x-150
         for entry in headings:
@@ -205,9 +216,11 @@ def sheet_to_pdf(ws, pdf_path,above_val):
         
         
 
-        y -= heading_reserved_height  # reserve space after heading
+        y = height-20 # reserve space after heading
         c.setFillColor(HexColor("#D9D9D9"))
-        c.rect(margin-2, y+45, col_width*2, row_height-20, stroke=0, fill=1)
+        c.rect(margin-2, y-row_height+15, col_width*2, row_height-20, stroke=0, fill=1)
+        
+        y=height-40
 
         # --- Left column ---
         left_y = y
@@ -219,6 +232,8 @@ def sheet_to_pdf(ws, pdf_path,above_val):
             x = margin
             c.setFillColor(HexColor(entry["background"]))
             c.rect(x - 2, left_y - text_offset_y - 2, col_width, row_height-2, stroke=0, fill=1)
+            c.setStrokeColor(HexColor("#D3D3D3"))  # light grey border
+            c.rect(x - 2, left_y - text_offset_y - 2, col_width, row_height - 2, stroke=1, fill=0)
             c.setFont("Helvetica-Bold" if entry["bold"] else "Helvetica", entry["size"])
             c.setFillColor(HexColor(entry["color"]))
             c.drawString(x, left_y - text_offset_y, entry["text"])
@@ -234,6 +249,8 @@ def sheet_to_pdf(ws, pdf_path,above_val):
             x = margin + col_width
             c.setFillColor(HexColor(entry["background"]))
             c.rect(x - 2, right_y - text_offset_y - 2, col_width, row_height-2, stroke=0, fill=1)
+            c.setStrokeColor(HexColor("#D3D3D3"))
+            c.rect(x - 2, right_y - text_offset_y - 2, col_width, row_height - 2, stroke=1, fill=0)
             c.setFont("Helvetica-Bold" if entry["bold"] else "Helvetica", entry["size"])
             c.setFillColor(HexColor(entry["color"]))
             c.drawString(x, right_y - text_offset_y, entry["text"])
@@ -247,9 +264,16 @@ def sheet_to_pdf(ws, pdf_path,above_val):
 # ---------- Streamlit UI ----------
 st.title("📊 MONTHLY MANAGER")
 
+if getattr(sys, 'frozen', False):
+    # Running in a PyInstaller bundle
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    # Running in a normal Python environment
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    
 today_str = datetime.today().strftime('%Y-%m-%d')
-task_folder = "Task Files"
-modified_folder = os.path.join("Modified Files", today_str)
+task_folder = os.path.join(BASE_DIR, "Task Files")
+modified_folder = os.path.join(BASE_DIR, "Modified Files", today_str)
 os.makedirs(modified_folder, exist_ok=True)
 
 files = [f for f in os.listdir(task_folder) if f.endswith(".xlsx")]
